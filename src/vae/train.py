@@ -6,7 +6,6 @@ import wandb
 import os
 from .model import NVAE
 from .loss import vae_loss
-
 import torchvision.utils as vutils
 
 def train_vae(config, train_loader, test_loader, device):
