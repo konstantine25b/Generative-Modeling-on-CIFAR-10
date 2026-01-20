@@ -263,3 +263,18 @@ We selected NVAE as our VAE implementation for the following reasons:
 - ✅ **Loss Decreases**: ELBO loss showed a downward trend even in 5 epochs.
 - ⚠️ **Image Quality**: Generated images are currently **blurred** and look visually similar to each other (potential mild posterior collapse common in early VAE training).
 - 🔍 **Detail**: Despite the blur, samples show distinguishable **shape features** "inside" the blur, indicating the model is starting to learn structural distributions even with minimal training.
+
+### Debug Experiment 2: NVAE with DMOL Loss
+**Goal**: Validate the implementation of the paper-accurate Discretized Mixture of Logistics (DMOL) loss and fix the blurry image issue.
+
+**Configuration**:
+- **Duration**: ~10 minutes
+- **Dataset**: 10% of CIFAR-10
+- **Training**: 10 Epochs
+- **Changes**: Switched from MSE/BCE loss to DMOL loss (10 mixture components).
+
+**Observations**:
+- ✅ **Metrics**: BPD started around **~5.58**, which is realistic for early training (State-of-the-art is ~2.91).
+- ⚠️ **Image Quality**: Unlike the "blurry" output of Experiment 1, the images are now **sharp and colorful**.
+- ⚠️ **Noise**: The images are currently **very noisy/pixelated**. This is expected behavior for DMOL loss in early training; the model learns local pixel distributions quickly but needs significantly more training time (50+ epochs) to coordinate them into coherent global structures.
+- 🔍 **Conclusion**: The statistical formulation is now correct and matches the NVAE paper. The next step is a full-scale training run to allow convergence.
