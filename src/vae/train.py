@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import wandb
 import os
+import numpy as np
 from .model import NVAE
 from .loss import vae_loss
 import torchvision.utils as vutils
@@ -181,4 +182,71 @@ def evaluate(model, test_loader, device, return_images=False):
     
     if return_images:
         return avg_loss, avg_bpd, recon_img, orig_img
+    return avg_loss, avg_bpd
+
+def evaluate_with_importance_sampling(model, test_loader, device, k=1000):
+    """
+    Evaluates the model using Importance Weighted Sampling (IWELBO).
+    This gives a tighter bound on the log-likelihood than the standard ELBO.
+    
+    Args:
+        model: Trained NVAE model
+        test_loader: DataLoader for test set
+        device: 'cuda' or 'cpu'
+        k: Number of importance samples (NVAE paper uses k=1000)
+        
+    Returns:
+        avg_loss: Negative IWELBO (NLL)
+        avg_bpd: Bits per dimension based on IWELBO
+    """
+    model.eval()
+    total_loss = 0
+    total_bpd = 0
+    total_samples = 0
+    
+    print(f"Starting Importance Weighted Evaluation (k={k})...")
+    
+    with torch.no_grad():
+        for i, (data, _) in enumerate(tqdm(test_loader, desc="IWELBO Eval")):
+            data = data.to(device)
+            batch_size = data.size(0)
+            
+            # Repeat input k times: [N, C, H, W] -> [N*k, C, H, W]
+            data_expanded = data.repeat_interleave(k, dim=0)
+            
+            # Forward pass with expanded batch
+            recon_batch, kl_losses = model(data_expanded)
+            
+            # Calculate UNREDUCED loss (element-wise)
+            # We get loss per sample: [N*k]
+            # Note: vae_loss returns (total_loss, recon, kl, bpd)
+            # We need 'total_loss' which is -ELBO
+            loss_unreduced, _, _, _ = vae_loss(recon_batch, data_expanded, kl_losses, beta=1.0, reduction='none')
+            
+            # Reshape to [N, k]
+            loss_unreduced = loss_unreduced.view(batch_size, k)
+            
+            # IWELBO calculation:
+            # log p(x) approx log (1/k sum exp(ELBO_i))
+            # ELBO_i = -loss_unreduced_i
+            # log p(x) = logsumexp(-loss_unreduced) - log(k)
+            # We want to return Negative Log Likelihood (NLL) = -log p(x)
+            
+            # nll = - (logsumexp(-loss) - log(k))
+            # nll = -logsumexp(-loss) + log(k)
+            
+            iw_elbo = -loss_unreduced # Convert loss to ELBO
+            log_likelihood = torch.logsumexp(iw_elbo, dim=1) - np.log(k)
+            nll = -log_likelihood # Back to loss (NLL)
+            
+            # Sum up NLL for the batch
+            total_loss += torch.sum(nll).item()
+            total_samples += batch_size
+            
+    avg_loss = total_loss / total_samples
+    
+    # Calculate BPD
+    dims = 32 * 32 * 3
+    avg_bpd = avg_loss / (np.log(2) * dims)
+    
     return avg_loss, avg_bpd

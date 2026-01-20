@@ -112,6 +112,77 @@ class DecoderBlock(nn.Module):
         x = self.cell(x)
         return x
 
+def sample_from_discretized_mix_logistic(l, nr_mix):
+    """
+    Sample from the discretized mixture of logistics distribution.
+    Input:
+        l: Output from the network [Batch, num_mix * 10, H, W]
+        nr_mix: Number of mixtures (10)
+    Output:
+        x: Sampled image [Batch, 3, H, W] in [0, 1] range
+    """
+    # Pytorch ordering
+    l = l.permute(0, 2, 3, 1) # [B, H, W, C]
+    ls = [int(y) for y in l.size()]
+    xs = ls[:-1] + [3] # [B, H, W, 3]
+    
+    # unpack parameters
+    logit_probs = l[:, :, :, :nr_mix]
+    l = l[:, :, :, nr_mix:].view(ls[0], ls[1], ls[2], 3, nr_mix * 3)
+    means = l[:, :, :, :, :nr_mix]
+    # log_scales = torch.max(l[:, :, :, :, nr_mix:2*nr_mix], -7.) # min_log_scale = -7
+    log_scales = torch.clamp(l[:, :, :, :, nr_mix:2*nr_mix], min=-7.)
+    coeffs = torch.tanh(l[:, :, :, :, 2*nr_mix:3*nr_mix])
+    
+    # sample mixture indicator from softmax
+    logit_probs = F.softmax(logit_probs, dim=3)
+    
+    # Needs to be done on CPU or efficiently?
+    # We can use Gumbel-Max or Categorical
+    # Flatten: [B*H*W, nr_mix]
+    flat_probs = logit_probs.view(-1, nr_mix)
+    indices = torch.multinomial(flat_probs, 1).view(ls[0], ls[1], ls[2])
+    
+    # One-hot encoding of indices
+    one_hot = F.one_hot(indices, num_classes=nr_mix).float().to(l.device) # [B, H, W, nr_mix]
+    
+    # Select parameters for the chosen mixture
+    # means: [B, H, W, 3, nr_mix]
+    # one_hot: [B, H, W, nr_mix] -> unsqueeze to [B, H, W, 1, nr_mix]
+    one_hot_exp = one_hot.unsqueeze(3)
+    
+    # Reduce over mixture dim
+    means = torch.sum(means * one_hot_exp, dim=4) # [B, H, W, 3]
+    log_scales = torch.sum(log_scales * one_hot_exp, dim=4)
+    coeffs = torch.sum(coeffs * one_hot_exp, dim=4)
+    
+    # Sample from logistic
+    u = torch.rand(xs, device=l.device)
+    x = torch.log(u) - torch.log(1. - u) + means
+    x = x + torch.exp(log_scales) * (torch.log(u) - torch.log(1. - u)) # Wait, standard logistic sample is mu + s * log(u/(1-u))
+    
+    # Actually the paper uses: x = mu + s * logit(u)
+    # Correct formula: sample = mean + scale * (log(u) - log(1-u))
+    x = means + torch.exp(log_scales) * (torch.log(u + 1e-5) - torch.log(1. - u + 1e-5))
+    
+    # Autoregressive coupling for RGB
+    # x0 = m0
+    # x1 = m1 + c0 * x0
+    # x2 = m2 + c1 * x0 + c2 * x1
+    x0 = x[:, :, :, 0]
+    x1 = x[:, :, :, 1] + coeffs[:, :, :, 0] * x0
+    x2 = x[:, :, :, 2] + coeffs[:, :, :, 1] * x0 + coeffs[:, :, :, 2] * x1
+    
+    x_out = torch.stack([x0, x1, x2], dim=3)
+    
+    # Rescale to [0, 1]
+    # In loss we assumed x in [-1, 1]
+    # So x_out is in [-1, 1] approx
+    x_out = torch.clamp(x_out, -1., 1.)
+    x_out = (x_out + 1.) / 2.
+    
+    return x_out.permute(0, 3, 1, 2) # [B, 3, H, W]
+
 # -----------------------------------------------------------------------------
 # 3. Main NVAE Model
 # -----------------------------------------------------------------------------
@@ -161,10 +232,16 @@ class NVAE(nn.Module):
         self.dec_upsample_32x32 = DecoderBlock(hidden_dim*2, hidden_dim)
         
         # Final output projection
+        # Discretized Mixture of Logistics requires 10 output parameters per mixture:
+        # 1 weight, 3 means, 3 scales, 3 coefficients
+        # For 10 mixtures: 10 * 10 = 100 channels
+        self.num_mix = 10
+        out_channels = self.num_mix * 10
+        
         self.final_conv = nn.Sequential(
             nn.BatchNorm2d(hidden_dim),
             Swish(),
-            nn.Conv2d(hidden_dim, 3, 3, padding=1) # Output logits for pixels
+            nn.Conv2d(hidden_dim, out_channels, 3, padding=1) # Output for DMOL
         )
         
         # -----------------------
@@ -236,9 +313,11 @@ class NVAE(nn.Module):
         h = h + self.z4_to_feat(z4)
         
         # --- Scale 2: 8x8 ---
-        h = self.dec_upsample_8x8(h) # Upsample to 8x8
+        # h = self.dec_upsample_8x8(h) # Upsample to 8x8
+        # Using separate block to prevent variable overwriting issues if any
+        h_8 = self.dec_upsample_8x8(h)
         
-        params_prior = self.z8_prior(h)
+        params_prior = self.z8_prior(h_8)
         mu_prior, log_var_prior = torch.chunk(params_prior, 2, dim=1)
         
         # Combine with skip connection from encoder
@@ -248,12 +327,12 @@ class NVAE(nn.Module):
         z8 = self.reparameterize(mu_post, log_var_post)
         kl_losses.append(self.calculate_kl(mu_post, log_var_post, mu_prior, log_var_prior))
         
-        h = h + self.z8_to_feat(z8)
+        h = h_8 + self.z8_to_feat(z8)
         
         # --- Scale 3: 16x16 ---
-        h = self.dec_upsample_16x16(h) # Upsample to 16x16
+        h_16 = self.dec_upsample_16x16(h) # Upsample to 16x16
         
-        params_prior = self.z16_prior(h)
+        params_prior = self.z16_prior(h_16)
         mu_prior, log_var_prior = torch.chunk(params_prior, 2, dim=1)
         
         params_post = self.z16_proj(feat_16) + params_prior
@@ -262,11 +341,11 @@ class NVAE(nn.Module):
         z16 = self.reparameterize(mu_post, log_var_post)
         kl_losses.append(self.calculate_kl(mu_post, log_var_post, mu_prior, log_var_prior))
         
-        h = h + self.z16_to_feat(z16)
+        h = h_16 + self.z16_to_feat(z16)
         
         # --- Final Reconstruction 32x32 ---
-        h = self.dec_upsample_32x32(h) # Upsample to 32x32
-        out = self.final_conv(h)
+        h_32 = self.dec_upsample_32x32(h) # Upsample to 32x32
+        out = self.final_conv(h_32)
         
         return out, kl_losses
 
@@ -302,7 +381,9 @@ class NVAE(nn.Module):
             # --- Output ---
             h = self.dec_upsample_32x32(h)
             out = self.final_conv(h)
-            return torch.sigmoid(out) # Return in [0, 1] range
+            
+            # Use DMOL Sampling
+            return sample_from_discretized_mix_logistic(out, self.num_mix)
 
     def calculate_kl(self, mu_q, log_var_q, mu_p, log_var_p):
         """
