@@ -86,11 +86,25 @@ def discretized_mix_logistic_loss(l, x):
                                                     torch.log(torch.clamp(cdf_delta, min=1e-12)), 
                                                     log_pdf_mid - np.log(127.5))))
     
-    log_probs = torch.sum(log_probs, dim=3) + log_sum_exp(logit_probs)
+    # log_probs shape: [B, H, W, 3, nr_mix]
+    # Sum over channels (dim 3) -> [B, H, W, nr_mix]
+    log_probs = torch.sum(log_probs, dim=3)
+    
+    # Add mixture weights (log_softmax(logits))
+    # logit_probs: [B, H, W, nr_mix]
+    # log_sum_exp reduces last dim -> [B, H, W]
+    # We need to unsqueeze it to broadcast: [B, H, W, 1]
+    log_mix_weights = logit_probs - log_sum_exp(logit_probs).unsqueeze(-1)
+    
+    # Combine: log(p(x|z)) + log(pi)
+    log_probs = log_probs + log_mix_weights # [B, H, W, nr_mix]
+    
+    # Sum over mixtures: log(sum(exp(...)))
+    final_log_probs = log_sum_exp(log_probs) # [B, H, W]
     
     # Loss is negative log likelihood
     # Return shape [B, H, W] -> Sum over H, W
-    return -torch.sum(log_probs, dim=[1, 2])
+    return -torch.sum(final_log_probs, dim=[1, 2])
 
 
 def vae_loss(recon_x, x, kl_losses, beta=1.0, reduction='mean'):
