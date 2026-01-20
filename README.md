@@ -66,8 +66,6 @@ pip install -r requirements.txt
 
 ---
 
----
-
 ## 3. Literature Review
 
 ### Paper 1: Nouveau VAE (NVAE)
@@ -94,6 +92,7 @@ pip install -r requirements.txt
 - ❌ **Training Time**: Small model took 43-50 hours; full model significantly longer
 
 **Comparison with Other Models**:
+
 | Model | Type | CIFAR-10 (BPD) |
 |-------|------|----------------|
 | NVAE (w/ flow) | Hierarchical VAE | **2.91** |
@@ -156,6 +155,7 @@ pip install -r requirements.txt
 - ❌ Significantly harder to implement from scratch than standard VAE
 
 **BIVA vs NVAE Comparison**:
+
 | Feature | BIVA (2019) | NVAE (2020) |
 |---------|-------------|-------------|
 | Main Innovation | Bidirectional Inference | Neural Architecture Design |
@@ -190,6 +190,7 @@ NVAE achieves better performance than BIVA by combining hierarchical ideas with 
 - ❌ 78 stochastic layers require careful gradient management
 
 **VDVAE vs NVAE Comparison**:
+
 | Feature | NVAE (NVIDIA) | VDVAE (OpenAI) |
 |---------|---------------|----------------|
 | Philosophy | Complex cells with clever design | Simple cells, brute force depth |
@@ -245,3 +246,20 @@ We selected NVAE as our VAE implementation for the following reasons:
 4. **Well-Documented**: Clear ablation studies suitable for replication
 
 ---
+
+## 4. Experiment Results
+
+### Debug Experiment 1: NVAE Quick Check
+**Goal**: Verify training pipeline, loss convergence, and image generation mechanics.
+
+**Configuration**:
+- **Duration**: ~10 minutes
+- **Dataset**: 10% of CIFAR-10 (5,000 images)
+- **Training**: 5 Epochs
+- **Architecture**: Small NVAE (2 scales, 64 hidden dims)
+
+**Observations**:
+- ✅ **Pipeline Works**: Data loading, forward/backward pass, and logging are functional.
+- ✅ **Loss Decreases**: ELBO loss showed a downward trend even in 5 epochs.
+- ⚠️ **Image Quality**: Generated images are currently **blurred** and look visually similar to each other (potential mild posterior collapse common in early VAE training).
+- 🔍 **Detail**: Despite the blur, samples show distinguishable **shape features** "inside" the blur, indicating the model is starting to learn structural distributions even with minimal training.
