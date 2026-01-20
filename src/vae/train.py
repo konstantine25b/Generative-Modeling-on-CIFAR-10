@@ -7,6 +7,8 @@ import os
 from .model import NVAE
 from .loss import vae_loss
 
+import torchvision.utils as vutils
+
 def train_vae(config, train_loader, test_loader, device):
     """
     Main training loop for NVAE.
@@ -117,6 +119,13 @@ def train_vae(config, train_loader, test_loader, device):
             gen_samples = model.sample(num_samples=16, device=device, temp=0.8)
         
         if config.get('use_wandb', False):
+            # Create image grids for WandB
+            # make_grid returns (C, H, W) which wandb can handle, or we can permute to (H, W, C)
+            # Normalization ensures values are in valid range for visualization
+            orig_grid = vutils.make_grid(val_orig_img, nrow=4, normalize=True)
+            recon_grid = vutils.make_grid(val_recon_img, nrow=4, normalize=True)
+            gen_grid = vutils.make_grid(gen_samples, nrow=4, normalize=True)
+
             # Log metrics
             wandb.log({
                 "epoch": epoch + 1,
@@ -127,17 +136,22 @@ def train_vae(config, train_loader, test_loader, device):
                 "val/loss": val_loss,
                 "val/bpd": val_bpd,
                 # Log Images
-                "images/original": [wandb.Image(val_orig_img, caption="Original")],
-                "images/reconstructed": [wandb.Image(val_recon_img, caption="Reconstructed")],
-                "images/generated": [wandb.Image(gen_samples, caption="Generated (T=0.8)")]
+                "images/original": [wandb.Image(orig_grid, caption="Original")],
+                "images/reconstructed": [wandb.Image(recon_grid, caption="Reconstructed")],
+                "images/generated": [wandb.Image(gen_grid, caption="Generated (T=0.8)")]
             })
             
-        # Save checkpoint
+        # Save best model
         if val_loss < best_loss:
             best_loss = val_loss
             save_path = os.path.join(config['model_save_dir'], 'nvae_best.pth')
             torch.save(model.state_dict(), save_path)
             print(f"✅ Saved best model to {save_path} (Val Loss: {val_loss:.4f})")
+            
+        # Save epoch checkpoint
+        save_path_epoch = os.path.join(config['model_save_dir'], f'nvae_epoch_{epoch+1}.pth')
+        torch.save(model.state_dict(), save_path_epoch)
+        print(f"💾 Saved epoch checkpoint to {save_path_epoch}")
             
         scheduler.step()
 
