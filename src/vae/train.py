@@ -5,7 +5,7 @@ from tqdm import tqdm
 import wandb
 import os
 import numpy as np
-from .model import NVAE
+from .model import NVAE, sample_from_discretized_mix_logistic
 from .loss import vae_loss
 import torchvision.utils as vutils
 
@@ -175,7 +175,15 @@ def evaluate(model, test_loader, device, return_images=False):
             if i == 0 and return_images:
                 # Take first 16 images
                 orig_img = data[:16]
-                recon_img = torch.sigmoid(recon_batch[:16]) # Apply sigmoid to logits
+                
+                # Check output channels for DMOL vs BCE
+                if recon_batch.size(1) > 3:
+                    # DMOL: Sample from mixture
+                    # recon_batch is [B, 100, H, W]
+                    recon_img = sample_from_discretized_mix_logistic(recon_batch[:16], nr_mix=10)
+                else:
+                    # BCE: Sigmoid
+                    recon_img = torch.sigmoid(recon_batch[:16]) # Apply sigmoid to logits
             
     avg_loss = total_loss / len(test_loader)
     avg_bpd = total_bpd / len(test_loader)
