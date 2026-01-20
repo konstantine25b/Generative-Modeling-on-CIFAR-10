@@ -11,6 +11,12 @@ def train_vae(config, train_loader, test_loader, device):
     """
     Main training loop for NVAE.
     """
+    # 0. Initialize WandB if configured
+    if config.get('use_wandb', False):
+        wandb.init(project="cifar10-nvae", config=config, name=config.get('run_name', 'nvae_experiment'))
+        # Log model gradients and topology
+        # wandb.watch(model, log='all') 
+
     # 1. Initialize Model
     model = NVAE(
         hidden_dim=config.get('hidden_dim', 64),
@@ -76,19 +82,20 @@ def train_vae(config, train_loader, test_loader, device):
             
             # Update progress bar
             progress_bar.set_postfix({
-                'loss': loss.item(), 
-                'bpd': bpd.item(),
-                'beta': beta
+                'loss': f"{loss.item():.2f}", 
+                'bpd': f"{bpd.item():.2f}",
+                'beta': f"{beta:.2f}"
             })
             
             # WandB logging (step-wise)
             if batch_idx % 100 == 0 and config.get('use_wandb', False):
                 wandb.log({
-                    "train_step_loss": loss.item(),
-                    "train_step_recon": recon_loss.item(),
-                    "train_step_kl": kl_loss.item(),
-                    "train_step_bpd": bpd.item(),
-                    "beta": beta
+                    "train/step_loss": loss.item(),
+                    "train/step_recon": recon_loss.item(),
+                    "train/step_kl": kl_loss.item(),
+                    "train/step_bpd": bpd.item(),
+                    "train/beta": beta,
+                    "train/lr": optimizer.param_groups[0]['lr']
                 })
 
         # Epoch averages
@@ -97,19 +104,32 @@ def train_vae(config, train_loader, test_loader, device):
         avg_kl = epoch_kl / len(train_loader)
         avg_bpd = epoch_bpd / len(train_loader)
         
-        print(f"Epoch {epoch+1} Average: Loss={avg_loss:.4f}, BPD={avg_bpd:.4f}, KL={avg_kl:.4f}")
+        print(f"\n=== Epoch {epoch+1} Summary ===")
+        print(f"Train Loss: {avg_loss:.4f} | Recon: {avg_recon:.4f} | KL: {avg_kl:.4f} | BPD: {avg_bpd:.4f}")
         
         # Validation
-        val_loss, val_bpd = evaluate(model, test_loader, device)
+        val_loss, val_bpd, val_recon_img, val_orig_img = evaluate(model, test_loader, device, return_images=True)
+        print(f"Val Loss:   {val_loss:.4f} | Val BPD: {val_bpd:.4f}")
+        
+        # Generate samples for visualization
+        model.eval()
+        with torch.no_grad():
+            gen_samples = model.sample(num_samples=16, device=device, temp=0.8)
         
         if config.get('use_wandb', False):
+            # Log metrics
             wandb.log({
                 "epoch": epoch + 1,
-                "train_loss": avg_loss,
-                "train_bpd": avg_bpd,
-                "val_loss": val_loss,
-                "val_bpd": val_bpd,
-                "lr": optimizer.param_groups[0]['lr']
+                "train/loss": avg_loss,
+                "train/bpd": avg_bpd,
+                "train/kl": avg_kl,
+                "train/recon": avg_recon,
+                "val/loss": val_loss,
+                "val/bpd": val_bpd,
+                # Log Images
+                "images/original": [wandb.Image(val_orig_img, caption="Original")],
+                "images/reconstructed": [wandb.Image(val_recon_img, caption="Reconstructed")],
+                "images/generated": [wandb.Image(gen_samples, caption="Generated (T=0.8)")]
             })
             
         # Save checkpoint
@@ -117,24 +137,35 @@ def train_vae(config, train_loader, test_loader, device):
             best_loss = val_loss
             save_path = os.path.join(config['model_save_dir'], 'nvae_best.pth')
             torch.save(model.state_dict(), save_path)
-            print(f"Saved best model to {save_path}")
+            print(f"✅ Saved best model to {save_path} (Val Loss: {val_loss:.4f})")
             
         scheduler.step()
 
-def evaluate(model, test_loader, device):
+def evaluate(model, test_loader, device, return_images=False):
     model.eval()
     total_loss = 0
     total_bpd = 0
     
+    recon_img = None
+    orig_img = None
+    
     with torch.no_grad():
-        for data, _ in test_loader:
+        for i, (data, _) in enumerate(test_loader):
             data = data.to(device)
             recon_batch, kl_losses = model(data)
             loss, _, _, bpd = vae_loss(recon_batch, data, kl_losses, beta=1.0)
             total_loss += loss.item()
             total_bpd += bpd.item()
             
+            # Capture first batch for visualization
+            if i == 0 and return_images:
+                # Take first 16 images
+                orig_img = data[:16]
+                recon_img = torch.sigmoid(recon_batch[:16]) # Apply sigmoid to logits
+            
     avg_loss = total_loss / len(test_loader)
     avg_bpd = total_bpd / len(test_loader)
     
+    if return_images:
+        return avg_loss, avg_bpd, recon_img, orig_img
     return avg_loss, avg_bpd
