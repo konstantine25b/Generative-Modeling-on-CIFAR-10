@@ -123,14 +123,125 @@ pip install -r requirements.txt
 - **Metric**: Downstream Classification Accuracy - encoder is frozen, single linear layer trained with labels on top
 
 **Pros & Cons for CIFAR-10**:
-- ✅ **Massive Improvement**: 30% better than standard VAE (87.14% vs 57.16%)
-- ✅ **Efficient Training**: Decomposable loss doesn't require huge batch sizes like SimCLR
-- ✅ **Robust**: Stable across different batch sizes and latent dimensions
-- ❌ **Not True Generative**: Removing KL term loses probability density estimation capability
-- ❌ **Behind SOTA SSL**: Trails top self-supervised methods like SimCLR (94.00%)
+- ✅ 30% better than standard VAE (87.14% vs 57.16%)
+- ✅ Decomposable loss doesn't require large batch sizes
+- ✅ Stable across different batch sizes and latent dimensions
+- ❌ Removing KL term loses probability density estimation capability
+- ❌ Lower performance than SimCLR (94.00%)
 
-**NVAE vs AASAE - Different Goals**:
-- **NVAE**: Best for *generating* high-quality images (measures data distribution understanding via BPD)
-- **AASAE**: Best for *learning representations* for classification with limited labels (not focused on image generation)
+**NVAE vs AASAE**:
+- **NVAE**: Focused on image generation (evaluated via BPD)
+- **AASAE**: Focused on representation learning for classification (not focused on generation)
+
+---
+
+### Paper 3: BIVA (Bidirectional-Inference Variational Autoencoder)
+
+**Overview**: BIVA is a deep hierarchical generative model designed to solve "skip-connection" and "posterior collapse" problems in standard deep VAEs by creating bidirectional communication between encoder and decoder.
+
+**Architecture Highlights**:
+- **Bidirectional Inference**: Inference process informed by both bottom-up (image features) and top-down (generative path) information, creating an expressive loop
+- **Stochastic Skip-Connections**: Passes information from any latent layer directly to output, preventing model from ignoring deep latent variables
+- **Dense Hierarchies**: Stacks many "BIVA cells" to model dependencies at multiple scales (global shapes to texture details)
+
+**CIFAR-10 Performance**:
+- **Score**: 3.08 BPD (calculated using IWAE sampling for better accuracy)
+- **Metric**: Bits Per Dimension (same as NVAE)
+
+**Pros & Cons for CIFAR-10**:
+- ✅ Produces sharper images than early VAEs due to deep hierarchy
+- ✅ Avoids posterior collapse, uses all latent variables effectively
+- ✅ Provides tight bound on data distribution
+- ❌ Bidirectional nature makes it slower and more memory-intensive
+- ❌ Significantly harder to implement from scratch than standard VAE
+
+**BIVA vs NVAE Comparison**:
+| Feature | BIVA (2019) | NVAE (2020) |
+|---------|-------------|-------------|
+| Main Innovation | Bidirectional Inference | Neural Architecture Design |
+| CIFAR-10 Score | 3.08 BPD | **2.91 BPD** |
+| Stability | Weight Norm + complex paths | Spectral Regularization |
+| Efficiency | Slower (bidirectional loop) | Faster (depthwise convolutions) |
+| Image Quality | Good, some noise | Better quality |
+
+NVAE achieves better performance than BIVA by combining hierarchical ideas with modern optimization techniques.
+
+---
+
+### Paper 4: VDVAE (Very Deep VAEs)
+
+**Overview**: VDVAE (OpenAI, 2020) proves that VAEs can match or beat autoregressive models when scaled to extreme depth. The key thesis: previous VAEs underperformed simply because they weren't deep enough. With up to 78 hierarchical levels, it achieved better image compression than almost any other model at the time.
+
+**Architecture Highlights**:
+- **Pure Top-Down Hierarchy**: Information flows from small latent space through dozens of layers to final image
+- **Residual Learning**: Modified residual cells with Weight Normalization and Layer Scaling (small initialization values) for stability
+- **Extreme Depth, Small Width**: 78 layers but only ~39M parameters for CIFAR-10, making it memory-efficient despite depth
+
+**CIFAR-10 Performance**:
+- **Score**: 2.87 BPD (calculated using Importance Sampling for tighter, more precise bound)
+- **Metric**: Bits Per Dimension (same as NVAE/BIVA)
+
+**Pros & Cons for CIFAR-10**:
+- ✅ Best likelihood score (2.87 BPD), beats NVAE and PixelCNN++
+- ✅ 70+ scales maintain global structure effectively
+- ✅ Generates all pixels at once, unlike autoregressive models
+- ❌ Extreme depth prone to posterior collapse without careful tuning
+- ❌ Deep hierarchy requires significant compute and long training time
+- ❌ 78 stochastic layers require careful gradient management
+
+**VDVAE vs NVAE Comparison**:
+| Feature | NVAE (NVIDIA) | VDVAE (OpenAI) |
+|---------|---------------|----------------|
+| Philosophy | Complex cells with clever design | Simple cells, brute force depth |
+| Depth | ~40 hierarchical groups | **78 layers** |
+| Parameters | More parameters | ~39M (efficient) |
+| Stability Strategy | Spectral Regularization | Layer Scaling + Weight Norm |
+| CIFAR-10 Score | 2.91 BPD | **2.87 BPD** |
+| Sampling Speed | Very fast | Fast |
+
+**NVAE vs VDVAE**:
+- **NVAE**: More efficient with modern architectural components
+- **VDVAE**: Achieves better score through extreme depth
+
+---
+
+### Hierarchical VAE Comparison & Model Selection
+
+**Performance & Training Statistics on CIFAR-10**:
+
+| Metric | BIVA (2019) | NVAE (2020) | VDVAE (2020) |
+|--------|-------------|-------------|--------------|
+| **CIFAR-10 Score (BPD)** | 3.08 | 2.91 | **2.87** |
+| **Parameters** | ~25M-100M+ | ~35M | ~39M |
+| **Training Speed** | Moderate | **Fastest** | Slowest |
+| **Estimated Training Time** | ~2-3 days (V100) | ~40-50 hours (V100) | ~1 week (V100) |
+
+**Architecture Summary**:
+
+**BIVA**:
+- ✅ Prevents posterior collapse with skip connections to stochastic layers
+- ❌ Bidirectional inference loop difficult to implement from scratch
+- ❌ Less efficient than newer specialized convolution types
+
+**NVAE**:
+- ✅ Depthwise separable convolutions (lighter and faster)
+- ✅ Spectral regularization for KL term stability
+- ✅ Production-ready architecture
+- ❌ Sensitive to hyperparameter tuning
+
+**VDVAE**:
+- ✅ Simple architecture with extreme depth (78 layers)
+- ✅ Best BPD score on CIFAR-10 (2.87)
+- ❌ Difficult to stabilize (requires specific initialization)
+- ❌ Slow training due to sequential overhead
+
+**Selected Model: NVAE**
+
+We selected NVAE as our VAE implementation for the following reasons:
+
+1. **Training Efficiency**: Fastest training among hierarchical VAEs (~40-50 hours vs 1 week for VDVAE)
+2. **Balanced Complexity**: Moderate complexity between BIVA and VDVAE
+3. **Modern Architecture**: Uses depthwise separable convolutions and spectral regularization
+4. **Well-Documented**: Clear ablation studies suitable for replication
 
 ---
