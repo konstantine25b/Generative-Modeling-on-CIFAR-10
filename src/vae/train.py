@@ -4,7 +4,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import wandb
 import os
-import gc
 import numpy as np
 from .model import NVAE, sample_from_discretized_mix_logistic
 from .loss import vae_loss
@@ -274,11 +273,6 @@ def evaluate_with_importance_sampling(model, test_loader, device, k=1000):
         avg_bpd: Bits per dimension based on IWELBO
     """
     model.eval()
-    
-    # Aggressive memory cleanup
-    gc.collect()
-    torch.cuda.empty_cache()
-    
     total_loss = 0
     total_bpd = 0
     total_samples = 0
@@ -303,16 +297,10 @@ def evaluate_with_importance_sampling(model, test_loader, device, k=1000):
                 
                 # Calculate loss per sample [B]
                 loss_unreduced, _, _, _ = vae_loss(recon_batch, data, kl_losses, beta=1.0, reduction='none')
-                
-                # Move to CPU to prevent GPU memory accumulation and fragmentation
-                all_losses.append(loss_unreduced.cpu())
-                
-                # Explicitly delete tensors to free memory for next iteration
-                del recon_batch, kl_losses, loss_unreduced
+                all_losses.append(loss_unreduced)
             
             # Stack losses: [B, k]
-            # Move back to device for logsumexp (or keep on CPU if preferred)
-            loss_unreduced = torch.stack(all_losses, dim=1).to(device)
+            loss_unreduced = torch.stack(all_losses, dim=1)
             
             # IWELBO calculation:
             # log p(x) approx log (1/k sum exp(ELBO_i))

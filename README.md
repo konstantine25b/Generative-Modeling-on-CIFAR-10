@@ -278,3 +278,37 @@ We selected NVAE as our VAE implementation for the following reasons:
 - ⚠️ **Image Quality**: Unlike the "blurry" output of Experiment 1, the images are now **sharp and colorful**.
 - ⚠️ **Noise**: The images are currently **very noisy/pixelated**. This is expected behavior for DMOL loss in early training; the model learns local pixel distributions quickly but needs significantly more training time (50+ epochs) to coordinate them into coherent global structures.
 - 🔍 **Conclusion**: The statistical formulation is now correct and matches the NVAE paper. The next step is a full-scale training run to allow convergence.
+
+### Experiment 3: Full NVAE Training
+**Goal**: Train the NVAE model for a longer duration to achieve better convergence and evaluate using Importance Weighted Sampling.
+
+**Configuration**:
+- **Duration**: ~4 hours (50 Epochs)
+- **Dataset**: Full CIFAR-10 (45k Train, 5k Val)
+- **Batch Size**: 64
+- **Architecture**: NVAE (2 scales, 64 hidden dims, 20 latent dims)
+- **Optimizer**: AdamW (lr=1e-3, weight_decay=3e-4) with Cosine Annealing
+- **KL Annealing**: 5 warmup epochs
+
+**Results**:
+- **Standard ELBO (Test Set)**: 4.59 BPD (Loss: 9780.59)
+- **IWELBO (k=100)**: **4.54 BPD** (Loss: 9673.99)
+  - *Note*: The Importance Weighted ELBO provides a tighter bound on the true log-likelihood, confirming the model is performing better than the standard training metric suggests.
+
+**Visual Observations**:
+- ✅ **Reconstruction**: The model can reconstruct images from the test set with high fidelity, preserving colors and global structure effectively.
+- ⚠️ **Generation**: Randomly generated samples (from p(z)) are currently **noisy**. Despite the improved quantitative score (4.54 BPD), the samples lack the sharpness of the reconstructions. This indicates that while the model has learned the data distribution statistics well (low loss), the sampling path might need temperature tuning or more training steps to produce clean images.
+
+### Differences from Official NVAE Implementation
+This project implements the core ideas of NVAE but scales them down for feasible training on a single GPU (e.g., Colab T4/V100) within a few hours.
+
+| Feature | Official NVAE Paper | This Implementation |
+|---------|---------------------|---------------------|
+| **Depth/Scales** | 3 scales with ~30+ hierarchical groups | 2 scales with 3 hierarchical groups (4x4, 8x8, 16x16) |
+| **Flows** | Inverse Autoregressive Flows (IAF) for flexible priors | Standard Normal Priors (No Flows) |
+| **Training Time** | ~43-50 hours (V100) | ~4 hours (T4/V100) |
+| **Batch Size** | Large (e.g., 128 per GPU) | 64 |
+| **Precision** | Mixed Precision (FP16/FP32) | Standard FP32 |
+| **Parameter Count** | Millions (Deep & Wide) | Lightweight (Hidden Dim 64) |
+
+Despite these simplifications, the model successfully achieves **4.54 BPD**, demonstrating the effectiveness of the NVAE architecture (Residual Cells, Depthwise Separable Convolutions, Spectral Regularization) even at a smaller scale. The official model reaches ~2.91 BPD primarily due to extreme depth and flow-based priors.
