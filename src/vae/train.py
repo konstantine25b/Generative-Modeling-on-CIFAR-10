@@ -39,6 +39,47 @@ def train_vae(config, train_loader, test_loader, device):
     best_loss = float('inf')
     start_epoch = 0
     
+    # Resume logic
+    model_save_dir = config.get('model_save_dir', './checkpoints')
+    if os.path.exists(model_save_dir):
+        # Find all epoch checkpoints
+        checkpoints = [f for f in os.listdir(model_save_dir) if f.startswith('nvae_epoch_') and f.endswith('.pth')]
+        if checkpoints:
+            # Extract epoch numbers
+            epochs = []
+            for cp in checkpoints:
+                try:
+                    # format: nvae_epoch_{epoch}.pth
+                    ep = int(cp.replace('nvae_epoch_', '').replace('.pth', ''))
+                    epochs.append(ep)
+                except ValueError:
+                    continue
+            
+            if epochs:
+                last_epoch = max(epochs)
+                resume_path = os.path.join(model_save_dir, f'nvae_epoch_{last_epoch}.pth')
+                print(f"Resuming from checkpoint: {resume_path}")
+                
+                checkpoint = torch.load(resume_path, map_location=device)
+                
+                # Check if it's a full checkpoint or just state_dict
+                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    if 'optimizer_state_dict' in checkpoint:
+                        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    if 'scheduler_state_dict' in checkpoint:
+                        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                    if 'epoch' in checkpoint:
+                        start_epoch = checkpoint['epoch'] # The saved epoch is the one that finished
+                    if 'best_loss' in checkpoint:
+                        best_loss = checkpoint['best_loss']
+                else:
+                    # Old format: just model state_dict
+                    model.load_state_dict(checkpoint)
+                    start_epoch = last_epoch
+                    
+                print(f"Resumed training from epoch {start_epoch}")
+    
     # KL Annealing parameters
     warmup_epochs = config.get('warmup_epochs', 5)
     
@@ -150,7 +191,14 @@ def train_vae(config, train_loader, test_loader, device):
             
         # Save epoch checkpoint
         save_path_epoch = os.path.join(config['model_save_dir'], f'nvae_epoch_{epoch+1}.pth')
-        torch.save(model.state_dict(), save_path_epoch)
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'best_loss': best_loss,
+            'config': config
+        }, save_path_epoch)
         print(f"💾 Saved epoch checkpoint to {save_path_epoch}")
             
         scheduler.step()
