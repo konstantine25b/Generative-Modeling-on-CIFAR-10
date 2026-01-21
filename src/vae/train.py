@@ -69,6 +69,14 @@ def train_vae(config, train_loader, test_loader, device):
                         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                     if 'scheduler_state_dict' in checkpoint:
                         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                        
+                        # If we are extending training (e.g. from 50 to 100 epochs),
+                        # we need to update T_max to the new total epochs.
+                        # Otherwise, the scheduler might think it's finished or restart.
+                        if config['epochs'] > scheduler.T_max:
+                            print(f"Updating scheduler T_max from {scheduler.T_max} to {config['epochs']}")
+                            scheduler.T_max = config['epochs']
+                            
                     if 'epoch' in checkpoint:
                         start_epoch = checkpoint['epoch'] # The saved epoch is the one that finished
                     if 'best_loss' in checkpoint:
