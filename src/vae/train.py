@@ -109,11 +109,17 @@ def train_vae(config, train_loader, test_loader, device):
             # Loss calculation
             loss, recon_loss, kl_loss, bpd = vae_loss(recon_batch, data, kl_losses, beta=beta)
             
+            # Check for NaN loss
+            if torch.isnan(loss):
+                print(f"Skipping iteration {batch_idx} due to NaN loss")
+                continue
+
             # Backward pass
             loss.backward()
             
             # Gradient clipping (important for deep VAEs)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=200)
+            # Reduced from 200 to 100 to prevent instability
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=100)
             
             optimizer.step()
             
@@ -142,14 +148,25 @@ def train_vae(config, train_loader, test_loader, device):
                 })
 
         # Epoch averages
-        avg_loss = epoch_loss / len(train_loader)
-        avg_recon = epoch_recon / len(train_loader)
-        avg_kl = epoch_kl / len(train_loader)
-        avg_bpd = epoch_bpd / len(train_loader)
+        if len(train_loader) > 0:
+            avg_loss = epoch_loss / len(train_loader)
+            avg_recon = epoch_recon / len(train_loader)
+            avg_kl = epoch_kl / len(train_loader)
+            avg_bpd = epoch_bpd / len(train_loader)
+        else:
+            avg_loss = float('nan')
+            avg_recon = float('nan')
+            avg_kl = float('nan')
+            avg_bpd = float('nan')
         
         print(f"\n=== Epoch {epoch+1} Summary ===")
         print(f"Train Loss: {avg_loss:.4f} | Recon: {avg_recon:.4f} | KL: {avg_kl:.4f} | BPD: {avg_bpd:.4f}")
         
+        # Skip validation if training failed
+        if np.isnan(avg_loss):
+            print("Skipping validation and sampling due to NaN training loss.")
+            continue
+
         # Validation
         val_loss, val_bpd, val_recon_img, val_orig_img = evaluate(model, test_loader, device, return_images=True)
         print(f"Val Loss:   {val_loss:.4f} | Val BPD: {val_bpd:.4f}")

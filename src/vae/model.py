@@ -141,6 +141,12 @@ def sample_from_discretized_mix_logistic(l, nr_mix):
     # We can use Gumbel-Max or Categorical
     # Flatten: [B*H*W, nr_mix]
     flat_probs = logit_probs.view(-1, nr_mix)
+    
+    # Check for NaNs in probabilities
+    if torch.isnan(flat_probs).any():
+        print("Warning: NaNs found in sampling probabilities. Replacing with uniform.")
+        flat_probs = torch.ones_like(flat_probs) / nr_mix
+        
     indices = torch.multinomial(flat_probs, 1).view(ls[0], ls[1], ls[2])
     
     # One-hot encoding of indices
