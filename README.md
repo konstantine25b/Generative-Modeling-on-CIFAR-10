@@ -312,3 +312,56 @@ This project implements the core ideas of NVAE but scales them down for feasible
 | **Parameter Count** | Millions (Deep & Wide) | Lightweight (Hidden Dim 64) |
 
 Despite these simplifications, the model successfully achieves **4.54 BPD**, demonstrating the effectiveness of the NVAE architecture (Residual Cells, Depthwise Separable Convolutions, Spectral Regularization) even at a smaller scale. The official model reaches ~2.91 BPD primarily due to extreme depth and flow-based priors.
+
+### Experiment 4: Extended NVAE Training (100 Epochs)
+**Goal**: Investigate if longer training improves sample quality and convergence.
+
+**Configuration**:
+- **Duration**: ~8 hours (100 Epochs)
+- **Dataset**: Full CIFAR-10
+- **Architecture**: Same as Experiment 3
+
+**Results**:
+- **Standard ELBO (Test Set)**: 4.47 BPD (Loss: 9524.60)
+- **IWELBO (k=100)**: **4.42 BPD** (Loss: 9420.23)
+  - *Note*: Continued improvement in quantitative metrics (BPD dropped from 4.54 to 4.42).
+
+**Visual Observations**:
+- ⚠️ **Generation Issues Persist**: Despite the improved BPD score, the randomly generated samples remain **noisy** and lack coherent global structure.
+- 🔍 **Hypothesis**: The model might be optimizing for pixel-level statistics (low loss) without capturing the global data manifold effectively, or the sampling temperature/procedure needs further adjustment. The disconnect between good BPD and poor samples is a known phenomenon in likelihood-based models.
+
+## 5. Current Architecture Details
+
+The implemented model is a lightweight version of the **Nouveau VAE (NVAE)**, adapted for efficient training on CIFAR-10 while retaining key architectural innovations.
+
+### Core Components
+- **Activation Function**: Swish ($x \cdot \sigma(x)$) is used throughout the network instead of ReLU for better gradient flow.
+- **Residual Cells**: The fundamental building block uses **Depthwise Separable Convolutions** to increase receptive fields efficiently.
+  - Structure: $1\times1$ Conv (Expansion) $\to$ $5\times5$ Depthwise Conv $\to$ $1\times1$ Conv (Projection) $\to$ Squeeze-and-Excitation (SE) Block.
+  - **Spectral Normalization**: Applied to convolution layers to stabilize training.
+
+### Encoder (Bottom-Up)
+The encoder extracts hierarchical features from the input image ($32\times32\times3$).
+1. **Stem**: Initial convolution mapping input to hidden dimensions.
+2. **Hierarchical Stages**:
+   - Stage 1: Processes $32\times32$ features.
+   - Stage 2: Downsamples to $16\times16$.
+   - Stage 3: Downsamples to $8\times8$.
+   - Stage 4: Downsamples to $4\times4$.
+   - Features from each stage are stored for skip connections to the decoder.
+
+### Decoder (Top-Down)
+The decoder generates the image by processing latent variables from coarse to fine scales.
+1. **Input**: Starts with a learnable constant parameter at $4\times4$ resolution.
+2. **Hierarchical Latent Variables**:
+   - **Scale 1 ($4\times4$)**: Coarse global structure.
+   - **Scale 2 ($8\times8$)**: Mid-level details.
+   - **Scale 3 ($16\times16$)**: Fine details.
+   - At each scale, the posterior $q(z|x)$ combines top-down decoder features with bottom-up encoder features (via residual connections).
+   - The prior $p(z)$ is learned from the top-down features alone.
+3. **Upsampling**: Uses bilinear interpolation followed by convolution.
+
+### Output & Loss Function
+- **Output Layer**: The final $32\times32$ feature map is projected to 100 channels to parameterize a **Discretized Mixture of Logistics (DMOL)** distribution (10 mixtures).
+- **Reconstruction Loss**: Negative Log-Likelihood of the DMOL distribution. This models the multimodal nature of pixel values better than MSE or BCE.
+- **KL Divergence**: Calculated analytically for Gaussian distributions. Summed over all scales.
