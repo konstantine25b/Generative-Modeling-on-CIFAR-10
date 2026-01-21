@@ -284,20 +284,23 @@ def evaluate_with_importance_sampling(model, test_loader, device, k=1000):
             data = data.to(device)
             batch_size = data.size(0)
             
-            # Repeat input k times: [N, C, H, W] -> [N*k, C, H, W]
-            data_expanded = data.repeat_interleave(k, dim=0)
+            # To avoid OOM with large k, we process importance samples in chunks.
+            # We loop k times (or in small batches) instead of expanding the whole batch at once.
+            all_losses = []
             
-            # Forward pass with expanded batch
-            recon_batch, kl_losses = model(data_expanded)
+            # Process one importance sample at a time (safest for memory)
+            # Optimization: could process in mini-batches of k if memory allows, 
+            # but simple looping is robust.
+            for _ in range(k):
+                # Forward pass (sampling z happens inside model)
+                recon_batch, kl_losses = model(data)
+                
+                # Calculate loss per sample [B]
+                loss_unreduced, _, _, _ = vae_loss(recon_batch, data, kl_losses, beta=1.0, reduction='none')
+                all_losses.append(loss_unreduced)
             
-            # Calculate UNREDUCED loss (element-wise)
-            # We get loss per sample: [N*k]
-            # Note: vae_loss returns (total_loss, recon, kl, bpd)
-            # We need 'total_loss' which is -ELBO
-            loss_unreduced, _, _, _ = vae_loss(recon_batch, data_expanded, kl_losses, beta=1.0, reduction='none')
-            
-            # Reshape to [N, k]
-            loss_unreduced = loss_unreduced.view(batch_size, k)
+            # Stack losses: [B, k]
+            loss_unreduced = torch.stack(all_losses, dim=1)
             
             # IWELBO calculation:
             # log p(x) approx log (1/k sum exp(ELBO_i))
