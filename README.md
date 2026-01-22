@@ -293,7 +293,7 @@ We selected NVAE as our VAE implementation for the following reasons:
 **Results**:
 - **Standard ELBO (Test Set)**: 4.59 BPD (Loss: 9780.59)
 - **IWELBO (k=100)**: **4.54 BPD** (Loss: 9673.99)
-  - *Note*: The Importance Weighted ELBO provides a tighter bound on the true log-likelihood, confirming the model is performing better than the standard training metric suggests.
+-   *Note*: The Importance Weighted ELBO provides a tighter bound on the true log-likelihood, confirming the model is performing better than the standard training metric suggests.
 
 **Visual Observations**:
 - ✅ **Reconstruction**: The model can reconstruct images from the test set with high fidelity, preserving colors and global structure effectively.
@@ -324,7 +324,7 @@ Despite these simplifications, the model successfully achieves **4.54 BPD**, dem
 **Results**:
 - **Standard ELBO (Test Set)**: 4.47 BPD (Loss: 9524.60)
 - **IWELBO (k=100)**: **4.42 BPD** (Loss: 9420.23)
-  - *Note*: Continued improvement in quantitative metrics (BPD dropped from 4.54 to 4.42).
+-   *Note*: Continued improvement in quantitative metrics (BPD dropped from 4.54 to 4.42).
 
 **Visual Observations**:
 - ⚠️ **Generation Issues Persist**: Despite the improved BPD score, the randomly generated samples remain **noisy** and lack coherent global structure.
@@ -365,3 +365,11 @@ The decoder generates the image by processing latent variables from coarse to fi
 - **Output Layer**: The final $32\times32$ feature map is projected to 100 channels to parameterize a **Discretized Mixture of Logistics (DMOL)** distribution (10 mixtures).
 - **Reconstruction Loss**: Negative Log-Likelihood of the DMOL distribution. This models the multimodal nature of pixel values better than MSE or BCE.
 - **KL Divergence**: Calculated analytically for Gaussian distributions. Summed over all scales.
+
+### Experiment 5: Continued NVAE Training (150 Epochs)
+**Goal**: Further extend training to improve sample quality and convergence, continuing from the 100-epoch checkpoint.
+
+**Configuration**:
+- **Duration**: Extended to 150 Epochs total.
+- **Warmup Annealing**: Increased to 105 epochs.
+  - *Strategy*: By setting the warmup (KL annealing) duration to 110 epochs (just past the resume point of 100), the training process re-introduced a short annealing phase. This allowed the model to temporarily relax the KL constraint and explore the latent space more freely before tightening the bound again, a technique often used to help models escape local minima during fine-tuning.
