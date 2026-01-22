@@ -366,10 +366,18 @@ The decoder generates the image by processing latent variables from coarse to fi
 - **Reconstruction Loss**: Negative Log-Likelihood of the DMOL distribution. This models the multimodal nature of pixel values better than MSE or BCE.
 - **KL Divergence**: Calculated analytically for Gaussian distributions. Summed over all scales.
 
-### Experiment 5: Continued NVAE Training (150 Epochs)
+### Experiment 5: Continued NVAE Training (125 Epochs)
 **Goal**: Further extend training to improve sample quality and convergence, continuing from the 100-epoch checkpoint.
 
 **Configuration**:
-- **Duration**: Extended to 150 Epochs total.
-- **Warmup Annealing**: Increased to 105 epochs.
+- **Duration**: Extended to 125 Epochs total.
+- **Warmup Annealing**: Increased to 110 epochs.
   - *Strategy*: By setting the warmup (KL annealing) duration to 110 epochs (just past the resume point of 100), the training process re-introduced a short annealing phase. This allowed the model to temporarily relax the KL constraint and explore the latent space more freely before tightening the bound again, a technique often used to help models escape local minima during fine-tuning.
+
+**Results**:
+- **Standard ELBO (Validation Set)**: 4.46 BPD (Loss: ~9489.09 at Epoch 121)
+-   *Note*: The validation loss reached its minimum around epoch 121, showing a slight improvement over the 100-epoch result (previous ~4.47-4.59 BPD range).
+
+**Visual Observations**:
+- ⚠️ **Noise Persists**: The generated samples remain noisy.
+- 🔍 **Conclusion**: While the model is mathematically improving (lower NLL/BPD), the perceptual quality of *random samples* has not yet converged to clean images. This suggests that either significantly more training time is required for the pixel-level distributions to align globally, or the model capacity (depth) needs to be increased to match the official NVAE results.
