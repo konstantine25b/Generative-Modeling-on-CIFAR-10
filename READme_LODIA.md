@@ -183,7 +183,10 @@ NCSNv2 introduces EMA როგორც პრაქტიკული “ს�
 
 
 
-ექსპერიმენტი:
+
+
+
+# ექსპერიმენტი N2
 
 NCSN U-Net - Noise schedule ablation (geometric vs linear vs SNR-based). 
 
