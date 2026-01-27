@@ -1,4 +1,4 @@
-## Paper 1: Generative Modeling by Estimating Gradients of the Data Distribution
+### Paper 1: Generative Modeling by Estimating Gradients of the Data Distribution
 
 Paper ამბობს: არ ვასწავლით model-ს პირდაპირ p(x)-ს ან likelihood-ს. ამის ნაცვლად ვასწავლით score function-ს:
 
