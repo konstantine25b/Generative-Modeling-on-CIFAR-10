@@ -4,7 +4,6 @@
 
 This project implements and compares three different generative model architectures on the CIFAR-10 dataset:
 - **Variational Autoencoders (VAE)**
-- **Energy-Based Models (EBM)**
 - **Noise Conditional Score Network (NCSN)**
 
 CIFAR-10 is a standard benchmark in generative modeling research, widely used in papers on VAE, EBM, Score-Based, and Diffusion models. The dataset is diverse enough to be challenging, yet manageable for model training with 32×32 RGB images from real-world scenes.
@@ -332,6 +331,8 @@ Despite these simplifications, the model successfully achieves **4.54 BPD**, dem
 
 ## 5. Current Architecture Details
 
+> **Deep Dive Available**: For a comprehensive, line-by-line explanation of the NVAE architecture, math, and code components, please read [NVAE_ARCHITECTURE_DETAILS.md](./NVAE_ARCHITECTURE_DETAILS.md).
+
 The implemented model is a lightweight version of the **Nouveau VAE (NVAE)**, adapted for efficient training on CIFAR-10 while retaining key architectural innovations.
 
 ### Core Components
@@ -381,3 +382,17 @@ The decoder generates the image by processing latent variables from coarse to fi
 **Visual Observations**:
 - ⚠️ **Noise Persists**: The generated samples remain noisy.
 - 🔍 **Conclusion**: While the model is mathematically improving (lower NLL/BPD), the perceptual quality of *random samples* has not yet converged to clean images. This suggests that either significantly more training time is required for the pixel-level distributions to align globally, or the model capacity (depth) needs to be increased to match the official NVAE results.
+
+### Experiment 6: Continued Training to 200 Epochs
+**Goal**: Push the training duration significantly further to see if the model can break through the "noisy sample" barrier.
+
+**Configuration**:
+- **Duration**: Extended to 200 Epochs total (resuming from 150).
+- **Warmup Annealing**: Adjusted to 165 epochs to provide another relaxation phase.
+
+**Results**:
+- **Standard ELBO (Test Set)**: 4.4301
+-   *Note*: A clear quantitative improvement, dropping below 4.44 BPD for the first time.
+
+**Visual Observations**:
+- 🔍 **Emerging Structure**: While samples are still noisy, there is a visible improvement in coherence. Forms and shapes are starting to emerge more clearly from the noise compared to earlier epochs, suggesting the model is beginning to grasp better global structure, though it still requires more training or capacity to fully resolve clean images.
