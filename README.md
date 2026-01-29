@@ -248,6 +248,12 @@ We selected NVAE as our VAE implementation for the following reasons:
 
 ## 4. Experiment Results
 
+📊 **[View Interactive WandB Report](https://wandb.ai/konstantine25b-free-university-of-tbilisi-/cifar10-nvae/reports/Cifar10-nvae--VmlldzoxNTc4NDg4NQ?accessToken=0yxcvr5xrfb38ib00mo2sv2zy9uyw47i7qahiymlcanworxfm6k1nyrubwbm9k42)**
+
+The complete training metrics, loss curves, and visual results are available in the interactive WandB report linked above.
+
+---
+
 ### Debug Experiment 1: NVAE Quick Check
 **Goal**: Verify training pipeline, loss convergence, and image generation mechanics.
 
