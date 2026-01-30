@@ -182,8 +182,93 @@ NCSNv2 introduces EMA როგორც პრაქტიკული “ს�
 
 # ექსპერიმენტი N1
 ## Noise Level Count Ablation
+------
+Time embedding არის noise level-ის ჩასმა ქსელში. sigma ანუ noise scale  გადაგვყავს ვექტორში რომელსაც რესბლოკებში ვუმატებთ.ვქმნით ახალ ლეიერს, გადავცემთ dim-ს ანუ ვექტორის ზომას(რამდენი ფიჩერი ექნება). 
+nn.Linear(in_features, out_features) = fully connected layer.
+fc1 იღებს 1 რიცხვს ანუ სიგმას და აკეთებს დიმ ზომის ვექტორს. fc2 კიდევ ერთი  fully connected რომ ვექტორი უკეთესი და ძიერი გამოვიდეს.
+
+forward(self,t) - t არის სიგმა.
+view(-1,1) ნიშნავს - გადაალაგე ტენსორ ისე რომ ფორმა ქონდეს (batch,1).
+-1 ნიშნავს რომ პაითორჩი მისით დათვლის batch sizes.
+რატომ ვშვებით ამას, იმიტომ რომ nn.Linear  ელოდება [batch,features] ფორმას.
+h = F.relu(self.fc1(t)) - თავიდან ქმნის [batch,dim] ვექტორებს. რელუ არაწრფივს ხდის(უარყოფითი -> 0). ემბედინგს ვაქცევთ არაწრფივს რათა სიგმას ეფექტი არ იყოს მხოლოდ ხაზოვანი.
+return F.relu(self.fc2(h)) - fc2 ისევ გარდაქმნის ემბედინგს და ისევ რელუს მოსდებს. შედეგი: [batch,dim]  embeding  ვექტორი, რომელიც გამოიყენება ქონდიშენად.
+-------
+ResBlock - Residual Block conditioning
+ResBlock  არის ბლოკი, რომელიც აკეთებს Conv->Norm->ReLU, ამატებს სიგმა ემბედინგს, ისევ Conv->Norm  დბოლოს აუთფუთი აქვს F(x) + x.
+
+ResBlock(nn.Module): - გადაეცემა input feature maps channels, რამდენ channel-ს გამოვიტანთ ამ block-იდან, embedding vector-ის ზომა (TimeEmbedding-ის output dim).
+
+Conv2d(in_channels, out_channels, kernel_size, padding) - output: [batch, out_ch, H, W]
+self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1) - მეორე convolution იგივე out_ch→out_ch. block-ის “მთავარი ტრანსფორმაცია” ხდება ორი conv-ით.
+self.emb_proj = nn.Linear(emb_dim, out_ch) - ემბედინგ ვექტორი [batch, emb_dim] უნდა გადაიქცეს [batch, out_ch]-ად.
+ეს არის კონდიშენინგ მექანიზმი: სიგმა აწესებს შიფტს ფიჩერებზე.
+
+self.gn1 = nn.GroupNorm(8, out_ch)
+self.gn2 = nn.GroupNorm(8, out_ch)
+არგუმენტები: GroupNorm(num_groups, num_channels)
+8 ჯგუფი ნიშნავს: out_ch channel-ები იყოფა 8 ჯგუფად და normalize ხდება ჯგუფებად
+GroupNorm კარგია diffusion/score მოდელებში, რადგან BatchNorm ხშირად ცუდად მუშაობს
+
+self.skip = nn.Conv2d(in_ch, out_ch, 1) if in_ch!=out_ch else nn.Identity()
+residual connectionში ინფუთი იქსი უნდა დავუმატოთ აუთფუთს, მაგრამ თუ in_ch != out_ch მაშინ შეიფები არ ემთხვევა, ამიტო ვიყენებთ 1x1  convolution-ს პროექციისთვის: [in_ch] → [out_ch]. თუ channels ემთხვევა, skip უბრალოდ identity.
+
+forward(self,x,emb): გადაეცემა იქსი ანუ feature map [batch, in_ch, H, W], sigma embedding [batch, emb_dim].
+h = F.relu(self.gn1(self.conv1(x))) - self.conv1(x) -> convolution: [batch, out_ch, H, W], self.gn1(...) → normalize features (სტაბილურობა), F.relu(...) → nonlinearity.
+h = h + self.emb_proj(emb).view(emb.size(0), -1, 1, 1) - self.emb_proj(emb) → [batch, out_ch], .view(emb.size(0), -1, 1, 1) → reshape to [batch, out_ch, 1, 1], ანუ თითო channel-ზე ერთი scalar bias/addition.
+მერე h + ...: - [batch, out_ch, 1, 1] ემატება [batch, out_ch, H, W]-ს, შედეგი: sigma გავლენას ახდენს ყველა პიქსელზე (H,W) ერთნაირად, მაგრამ განსხვავებულ channel-ებზე განსხვავებულად.
+h = self.gn2(self.conv2(h)) მეორე conv + GroupNorm (ამ ხაზში ReLU ჯერ არ გვაქვს).
+return F.relu(h + self.skip(x)) - self.skip(x) არის residual branch (identity ან 1×1 conv), h + skip(x) = residual sum, ReLU ბოლოს, output activation. საბოლოო output shape: [batch, out_ch, H, W]
+----------
+UNetScore — U-Net structure score prediction-ისთვის
+Score model output უნდა იყოს იგივე ზომის tensor, რაც input image:
+input: [batch, 3, 32, 32]
+output: [batch, 3, 32, 32]
+ეს output არის “vector field”:
+თითო პიქსელზე 3 კომპონენტი (RGB მიმართულება), როგორ “გადავწიოთ” sample data-სკენ.
+
+UNetScore(nn.Module): - base_ch არის პირველი stage-ის channel count (64).
+elf.time_emb = TimeEmbedding(128) - sigma embedding vector size = 128.
+self.down1 = ResBlock(3, base_ch, 128)
+self.down2 = ResBlock(base_ch, base_ch*2, 128)
+self.down3 = ResBlock(base_ch*2, base_ch*4, 128)
+ჩენელები იზრდება, 3->64->128->256
+
+self.mid = ResBlock(base_ch*4, base_ch*4, 128) - ყველაზე დაბალ resolution-ზე feature processing.
+
+self.up3 = ResBlock(base_ch*8, base_ch*2, 128)
+self.up2 = ResBlock(base_ch*4, base_ch, 128)
+self.up1 = ResBlock(base_ch*2, base_ch, 128)
+რატომ ასეთი input channels? U-Net-ში decoding დროს ვაკეთებთ concat([upsampled, skip]), ამიტომ channels ემატება.
+მაგალითად up3: upsampled mid: base_ch*4 (256), skip from d3: base_ch*4 (256), concat → base_ch*8 (512), output ვაბრუნებთ base_ch*2 (128)
+
+self.out = nn.Conv2d(base_ch, 3, 3, padding=1)
+final layer: 64→3
+padding=1 რომ output ისევ 32×32 იყოს.
+ეს არის score estimate.
+
+self.pool = nn.AvgPool2d(2)
+downsampling: H,W ნახევრდება (32→16→8→4)
+AvgPool2d(2) ნიშნავს 2×2 window average.
+
+self.up = nn.Upsample(scale_factor=2)
+upsampling: H,W ორმაგდება (4→8→16→32)
+earest interpolation default-ია
 
 
+forward(self, x, sigma): - x: input image or noisy image [batch,3,32,32], sigma: [batch].
+emb = self.time_emb(torch.log(sigma)) - sigma-ს იღებენ log-scale-ზე, time_emb returns [batch,128]
+d1 = self.down1(x, emb) - d1 shape: [batch,64,32,32]
+d2 = self.down2(self.pool(d1), emb) - pool(d1) → [batch,64,16,16], down2 → [batch,128,16,16]
+d3 = self.down3(self.pool(d2), emb) pool(d2) → [batch,128,8,8], down3 → [batch,256,8,8]
+mid = self.mid(self.pool(d3), emb) pool(d3) → [batch,256,4,4], mid → [batch,256,4,4]
+u3 = self.up3(torch.cat([self.up(mid), d3], 1), emb) - self.up(mid) → upsample mid: [batch,256,8,8], 
+torch.cat([...], 1) → concatenate on channel dim (dim=1) means [batch,256,8,8] + [batch,256,8,8] → [batch,512,8,8]. up3 ResBlock: input 512 → output 128: [batch,128,8,8]
+u2 = self.up2(torch.cat([self.up(u3), d2], 1), emb) - up(u3) → [batch,128,16,16], concat with d2 [batch,128,16,16] → [batch,256,16,16], up2 outputs [batch,64,16,16].
+u1 = self.up1(torch.cat([self.up(u2), d1], 1), emb) - up(u2) → [batch,64,32,32], concat with d1 [batch,64,32,32] → [batch,128,32,32], up1 outputs [batch,64,32,32].
+
+return self.out(u1) - final conv: [batch,64,32,32] → [batch,3,32,32], ეს არის predicted score field.
+------------
 
 
 
