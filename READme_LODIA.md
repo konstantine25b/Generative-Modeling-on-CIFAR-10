@@ -21,11 +21,7 @@ Score network  𝑠𝜃(𝑥) უნდა მიუახლოვდეს ∇
 2.Denoising Score Matching (DSM)
 DSM იდეა: ჯერ “დააზიანე” x noise-ით და მერე ასწავლე perturbed distribution-ის score. ანუ network სწავლობს “როგორ უნდა დააბრუნოს” noisy sample უკან density-ში. 
 
-3.Sliced Score Matching (SSM)
-SSM იყენებს random projection vector v-ს და approximate-ს აკეთებს trace-term-ის:
-უპირატესობა: original distribution-ის score-ს სწავლობს; მინუსი: forward-mode autodiff-ის გამო ~4x მძიმეა.
-
-4.Sampling with Langevin dynamics
+3.Sampling with Langevin dynamics
 ჩვენი score network სწავლობს “სად უნდა წავიდეს სურათი”, ანუ მოცემულ სურათზე/ნარევზე გვაძლევს მიმართულებას, რომელიც მას უფრო მაღალი probability-ის (უფრო “realistic”) რეგიონში წაიყვანს. Sampling-ის დროს ჩვენ ვიწყებთ შემთხვევითი noise-ით და ბევრჯერ ვიმეორებთ პატარა განახლებებს, რომ ნელ-ნელა მივიღოთ რეალისტური სურათი.
 
 Basic Langevin step
@@ -152,23 +148,7 @@ NCSNv2 ამჩნევს რეგულარობას: score-ის “
 უფრო ადვილია ბევრი noise level-ის გამოყენება
 უფრო მარტივი ხდება continuous noise/time conditioning-ის მხარდაჭერა
 
-4.Tuning sampling hyperparameters to match the noise schedule
-პირველ paper-ში sampling-სთვის ხშირად გამოიყენებოდა ერთი ფიქსირებული “recipe”: რამდენი Langevin step თითო noise level-ზე და დაახლოებით რა step size. ასევე იყო step size-ის scaling idea noise level-ის მიხედვით (ინტუიცია: რომ sampling “სტაბილური” ყოფილიყო სხვადასხვა დონეზე). მაგრამ ეს პარამეტრები დიდწილად იყო ერთი კონკრეტული setting-ისთვის შერჩეული და ზოგ dataset-ზე/რეზოლუციაზე არ გადაიტანებოდა.
-
-NCSNv2 ამბობს: sampling hyperparams (რამდენი ნაბიჯი, რა step size) უნდა აირჩეს noise schedule-თან შეთანხმებით. ანუ თუ შეცვალე:
-
-1.initial noise
-2.დონეების რაოდენობა
-3.დონეების განაწილება
-
-მაშინ sampling-ის ნაბიჯების რაოდენობა და step size აღარ შეიძლება “იგივე დარჩეს”. წინააღმდეგ შემთხვევაში შეიძლება მიიღო:
-
-1.ძალიან ნელი mixing (თუ ნაბიჯები/step size პატარაა)
-2.instability / artifacts (თუ ნაბიჯები/step size დიდია)
-
-ეს არის ზუსტად ის ადგილი, სადაც ჩვენს პროექტში გაჩნდება “SNR-based” tuning იდეა: sampling-ის კონტროლი ისე, რომ სხვადასხვა დონეზე მოძრაობა იყოს თანმიმდევრული.
-
-5.EMA of weights for more stable and cleaner samples
+4.EMA of weights for more stable and cleaner samples
 როგორ იყო პირველ paper-ში (2019):
 პირველ paper-ში ყურადღება იყო score learning + annealed Langevin sampling-ზე და არქიტექტურულ ნაწილზე. EMA (Exponential Moving Average) როგორც sampling-time best practice არ იყო მთავარი კომპონენტი.
 
@@ -193,7 +173,9 @@ view(-1,1) ნიშნავს - გადაალაგე ტენსო�
 რატომ ვშვებით ამას, იმიტომ რომ nn.Linear  ელოდება [batch,features] ფორმას.
 h = F.relu(self.fc1(t)) - თავიდან ქმნის [batch,dim] ვექტორებს. რელუ არაწრფივს ხდის(უარყოფითი -> 0). ემბედინგს ვაქცევთ არაწრფივს რათა სიგმას ეფექტი არ იყოს მხოლოდ ხაზოვანი.
 return F.relu(self.fc2(h)) - fc2 ისევ გარდაქმნის ემბედინგს და ისევ რელუს მოსდებს. შედეგი: [batch,dim]  embeding  ვექტორი, რომელიც გამოიყენება ქონდიშენად.
+
 -------
+
 ResBlock - Residual Block conditioning
 ResBlock  არის ბლოკი, რომელიც აკეთებს Conv->Norm->ReLU, ამატებს სიგმა ემბედინგს, ისევ Conv->Norm  დბოლოს აუთფუთი აქვს F(x) + x.
 
@@ -219,7 +201,9 @@ h = h + self.emb_proj(emb).view(emb.size(0), -1, 1, 1) - self.emb_proj(emb) → 
 მერე h + ...: - [batch, out_ch, 1, 1] ემატება [batch, out_ch, H, W]-ს, შედეგი: sigma გავლენას ახდენს ყველა პიქსელზე (H,W) ერთნაირად, მაგრამ განსხვავებულ channel-ებზე განსხვავებულად.
 h = self.gn2(self.conv2(h)) მეორე conv + GroupNorm (ამ ხაზში ReLU ჯერ არ გვაქვს).
 return F.relu(h + self.skip(x)) - self.skip(x) არის residual branch (identity ან 1×1 conv), h + skip(x) = residual sum, ReLU ბოლოს, output activation. საბოლოო output shape: [batch, out_ch, H, W]
+
 ----------
+
 UNetScore — U-Net structure score prediction-ისთვის
 Score model output უნდა იყოს იგივე ზომის tensor, რაც input image:
 input: [batch, 3, 32, 32]
@@ -268,7 +252,103 @@ u2 = self.up2(torch.cat([self.up(u3), d2], 1), emb) - up(u3) → [batch,128,16,1
 u1 = self.up1(torch.cat([self.up(u2), d1], 1), emb) - up(u2) → [batch,64,32,32], concat with d1 [batch,64,32,32] → [batch,128,32,32], up1 outputs [batch,64,32,32].
 
 return self.out(u1) - final conv: [batch,64,32,32] → [batch,3,32,32], ეს არის predicted score field.
+
 ------------
+def geometric_schedule(sigma_min, sigma_max, L):
+    return np.exp(np.linspace(np.log(sigma_max), np.log(sigma_min), L))
+
+გადაეცემა ყველაზე პატარა და დიდი ნოის ლეველი და ლეველების რაოდენობა.
+მიზანი: შევქმნათ L ცალი sigma მნიშვნელობა, რომელიც იწყება sigma_max-იდან და “smooth”-ად მიდის sigma_min-მდე.
+
+np.log(x) არის natural logarithm (ln). Log სივრცეში, geometric progression ხდება linear progression. 
+თუ რეალურ სივრცეში: sigma multiplicative-ად იცვლება, log სივრცეში: log(sigma) additive-ად/linear-ად იცვლება.
+
+np.linspace(np.log(sigma_max), np.log(sigma_min), L)
+ქმნის L რაოდენობის რიცხვს, რომლებიც თანაბრადაა განაწილებული a-დან b-მდე.
+
+np.exp( ... ) - აკეთებს e^y (inverse of log)
+გადავედით log-სივრცეში, გავაკეთეთ linear spacing, მერე დავბრუნდით უკან რეალურ სივრცეში exp-ით. 
+
+----------
+
+def dsm_loss(model, x, sigmas):
+model: შენი score network (UNetScore), x: batch რეალური სურათები (Tensor), shape ჩვეულებრივ: [B, 3, 32, 32], sigmas: noise levels-ის list, მაგალითად [50, ..., 0.01] ზომით L
+
+batch_size = x.size(0) - მაგალითად თუ x არის [128, 3, 32, 32], მაშინ batch_size = 128.
+
+idx = torch.randint(0, len(sigmas), (batch_size,), device=x.device)
+batch-ში ყოველი sample იღებს თავის noise level-ს.ეს ეხმარება network-ს ისწავლოს ყველა scale-ზე (multi-scale training).
+
+sigma = sigmas[idx].view(batch_size, 1, 1, 1) - sigma-ს ვაწყობთ shape-ზე [B, 1, 1, 1], რომ როცა sigma * noise გავაკეთებთ, sigma სწორად “გავრცელდეს” (broadcast) მთელ image-ზე.
+
+noise = torch.randn_like(x) - ქმნის random Gaussian noise-ს (N(0,1)), იმავე shape-ით რაც x.
+
+x_noisy = x + sigma * noise - ვქმნით noisy image-ს, თითო sample-ზე თავისი sigma “მასშტაბავს” noise-ს.შედეგი: x_noisy shape იგივეა: [B,3,32,32]. 
+
+score = model(x_noisy, sigma.squeeze()) - აბრუნებს score field-ს, იგივე ზომის tensor-ს რაც image, მაგრამ შენ model-ს მეორე არგუმენტად უნდა მივცეთ sigma [B] ან [B,1] ფორმით.sigma ამ მომენტში არის [B,1,1,1], sigma.squeeze() შლის ზომებს 1-იან განზომილებებს → ხდება [B]. score ნიშნავს: მოდელი პროგნოზირებს: რომელი მიმართულებით უნდა გადავსწიოთ noisy image, რომ უფრო data-სკენ წავიდეს.
+
+target = -noise / sigma
+target tells the model: “როგორ უნდა ‘დააბრუნო’ noisy sample უკან”
+
+loss = ((score - target) ** 2 * sigma**2).mean()
+difference per pixel, squared error, * sigma **2 ეს არის weighting, იღებს საშუალოს ყველა ელემენტზე: batch-ზე, channel-ზე, პიქსელებზე.
+
+-------------
+
+update_ema(model, ema_model, decay=0.999): - model: აქტუალური training model (weights იცვლება optimizer.step()-ით), ema_model: EMA weights model, decay: რამდენად “ნელი” იყოს EMA.
+
+for p, ema_p in zip(model.parameters(), ema_model.parameters()):
+model.parameters() = ყველა trainable parameter (weights/bias) model-ში (iterator
+ema_model.parameters() იგივე EMA model-ისთვის.
+zip(...) აერთიანებს წყვილებად: p = model-ის ერთ-ერთი parameter tensor და ema_p = EMA model-ის შესაბამისი parameter tensor
+
+ema_p.data = decay * ema_p.data + (1 - decay) * p.data
+ეს არის EMA ფორმულა. ema_p.data არის EMA parameter-ის raw tensor (weights), p.data არის training model-ის raw tensor. EMA ძირითადად “ძველ მნიშვნელობას” ინარჩუნებს (decay=0.999), მაგრამ ცოტათი “ახალი weight”-ისკენ იწევს (1-decay=0.001).
+
+
+
+--------------
+
+sampling algorithm NCSN-ისთვის. Model-მა ისწავლა score field, Sampling-ში ჩვენ ვიწყებთ pure noise-ით და ბევრჯერ ვაკეთებთ განახლებას, რომ ნელ-ნელა მივიდეთ რეალისტურ სურათებამდე, “annealed” ნიშნავს: sigma დიდიდან პატარამდე მოდის (noise decreasing schedule).
+
+def annealed_langevin(model, sigmas, steps_per_level=50): - model: trained score network (ჩვეულებრივ ema_model),
+sigmas: noise levels (list/tensor), მაგალითად geometric schedule, steps_per_level: რამდენ Langevin step გავაკეთოთ თითო sigma-ზე (აქ 50). 
+
+x = torch.randn(64,3,32,32).to(device)
+ქმნის random Gaussian tensor-ს N(0,1). 
+shape (64,3,32,32) ნიშნავს:64 სურათი (batch), 3 channel (RGB), 32×32 resolution
+ეს არის sampling-ის start point: pure noise images
+
+sigma_min = sigmas[-1], sigma_min გვჭირდება step size scaling-ისთვის (alpha-ში).
+
+score = model(x, torch.full((x.size(0),), sigma, device=device)) 
+x.size(0) = 64 (batch size)
+ქმნის tensor-ს ზომით (64,), სადაც ყველა ელემენტი არის sigma, იმიტომრომ model-ის forward ელოდება sigma per sample (shape [B]). 
+model(x, ...) - model იღებს: noisy image batch x, sigma batch (ყველაზე ერთნაირი sigma ამ დონეზე).აბრუნებს score field-ს. score გეუბნება: ამ sigma-ზე, ამ სურათის თითო პიქსელზე რა მიმართულებით უნდა “გასწორდეს” რომ data distribution-ისკენ წავიდეს.
+
+alpha = 1e-5*(sigma/sigma_min)**2 - alpha არის step size (როგორი დიდი ნაბიჯით დავიძრათ).
+
+x = x + alpha*score + torch.sqrt(torch.tensor(2*alpha))*torch.randn_like(x)
+ეს არის ლანჯევინის აფდეითი. x (წინა მდგომარეობა), alpha * score model-ის guidance-ის მიმართულებით ვწევთ sample-ს data-სკენ. 
+sqrt(2*alpha) * noise - torch.randn_like(x) ქმნის random Gaussian noise-ს იგივე ზომით რაც x, sqrt(2*alpha) მასშტაბავს noise-ს სწორად. 
+
+მთლიანობაში update არის “controlled random walk”:
+score გიბიძგებს სწორ მიმართულებით
+noise გაძლევს exploration-ს
+
+
+შედეგი:
+
+FID_L10	196.12872
+FID_L20	178.60734
+FID_L5	455.86757
+epoch	51
+train_loss	0.1794
+
+
+epoch	▁▁▁▁▂▂▂▂▂▂▃▃▃▃▃▄▄▄▄▄▅▅▅▅▅▅▆▆▆▆▆▇▇▇▇▇▇███
+train_loss	█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
 
 
 
@@ -288,108 +368,30 @@ noise levels (σ values) ეცემა მუდმივი ფარდო�
 Linear schedule-ში σ values ეცემა მუდმივი სხვაობით.
 σ: 50 → 40 → 30 → 20 → 10 → ...
 
-პრობლემა:
-Linear schedule-ში ხდება: large distribution jump → score guidance invalid → random walk
+def linear_schedule(sigma_min, sigma_max, L):
+    return np.linspace(sigma_max, sigma_min, L)
 
-Linear spacing იწვევს:
-1.high σ რეგიონში distributions ძალიან შორსაა ერთმანეთისგან
-2.overlap თითქმის არ არსებობს
-
-რა ხდება sampling დროს:
-
-პირველი რამდენიმე დონე: network ვერ პოულობს data direction-ს,
-noise dominates,
-chain ვერ "იჭერს" manifold-ს.
 
 3) SNR-based Step Size (Geometric σ + tuned α)
 Noise levels იგივეა geometric schedule-ის, მაგრამ Langevin step size (α) ირჩევა ისე, რომ:
 signal-to-noise ratio იყოს დაბალანსებული.
 
-ანუ update step-ში:
-score contribution,
-injected noise
+def snr_step_size(sigma, sigma_min, base_eps=1e-5):
+    return base_eps * (sigma / sigma_min) ** 2
+
+ეს აბრუნებს alpha-ს (step size), ანუ რამდენად დიდი ნაბიჯი უნდა გააკეთოს Langevin update-მა. 
+რატომ კვადრატი?
+Langevin dynamics-ში ჩვეულებრივ noise-ის მასშტაბი და score-ის მასშტაბი sigma-ზე დამოკიდებულია.
+ეს კვადრატი არის მარტივი, პრაქტიკაში გავრცელებული heuristic, რომ step size “სწორად” გაიზარდოს დიდ noise დონეებზე.
+
+ბოლოს ვამრავლებთ baseline value-ზე.
+ეს გვეხმარება scale-ის კონტროლში:
+თუ base_eps პატარაა → update-ები უფრო ფრთხილია
+თუ base_eps დიდი → update-ები უფრო აგრესიულია
 
 
 
-იდეა:
 
-ამ პროექტში ვსწავლობთ score-based generative modeling-ს CIFAR-10 dataset-ზე Noise Conditional Score Network (NCSN) არქიტექტურის გამოყენებით.
-
-ჩვენ არ ვიყენებთ labels-ს.
-მიზანია პირდაპირ ვისწავლოთ სურათების probability density structure — ანუ როგორია “რეალური სურათების სივრცე”.
-
-მოდელი სწავლობს არა პირდაპირ სურათების გენერაციას, არამედ:
-
-რომელი მიმართულებით უნდა “გავწიოთ” noisy image, რათა მივუახლოვდეთ data manifold-ს.
-
-ეს მიდგომა fundamentally განსხვავდება GAN-ებისგან და VAE-ებისგან.
-
-
-არქიტექტურა:
-Score model აფასებს:
-“noise-ით დაბინძურებული სურათის შემთხვევაში, სად არის data manifold?”
-ანუ network-ის output არის vector field იმავე ზომის რაც სურათი.
-
-რატომ U-Net?
-
-Score field უნდა იყოს:
-ლოკალურად ზუსტი (texture, edge, color)
-გლობალურად თანმიმდევრული (object-like structure)
-U-Net ამ ორს აერთიანებს.
-
-Network სტრუქტურა:
-Input:
-3×32×32 image
-noise level (sigma embedding)
-
-Encoder (Down path)
-Conv → ResBlock → Downsample
-როლი: უფრო დიდი receptive field → global context
-
-Bottleneck
-ყველაზე კომპაქტური representation
-აქ network ხედავს image-ს “სრული კონტექსტით”
-
-Decoder (Up path)
-Upsample → ResBlock
-skip connections encoder-დან
-
-Output Layer
-Conv layer → score estimate (3×32×32)
-
-
-Residual Blocks
-
-ResBlocks საშუალებას აძლევს:
-deep network training
-gradient flow stabilization
-better feature reuse
-
-Noise Conditioning
-
-Network უნდა იცოდეს noise level.
-sigma → embedding → injected in blocks.
-
-მნიშვნელობა:
-Sigma დიდი	         Sigma პატარა
-Structure learning	Detail refinement
-
-
-ტრენინგი:
-პროცესი:
-
-clean image,
-random noise level,
-add Gaussian noise,
-train network to predict denoising direction,
-მოდელი სწავლობს multi-scale gradient field.
-
-სემპლინგი:
-ჩვენ ვიყენებთ annealed Langevin dynamics:
-
-random start
-step-by-step refinement
-noise level decreases
 
 
 | Schedule  | FID        |
