@@ -1,3 +1,5 @@
+WANDB LINK: https://wandb.ai/llodi22-free-university-of-tbilisi-/CIFAR-10/workspace?nw=nwuserllodi22
+
 # Paper 1: Generative Modeling by Estimating Gradients of the Data Distribution
 
 Paper ამბობს: არ ვასწავლით model-ს პირდაპირ p(x)-ს ან likelihood-ს. ამის ნაცვლად ვასწავლით score function-ს:
