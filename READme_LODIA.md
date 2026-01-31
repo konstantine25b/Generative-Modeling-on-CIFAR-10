@@ -1,5 +1,35 @@
 WANDB LINK: https://wandb.ai/llodi22-free-university-of-tbilisi-/CIFAR-10/workspace?nw=nwuserllodi22
 
+NCSN (Noise Conditional Score Network) არის neural network, რომელიც სწავლობს noisy სურათებისთვის score function-ს — ანუ ∇x log p(x | σ) — სხვადასხვა noise level σ-ზე. Training-ში ჩვენ ვამატებთ Gaussian noise-ს რეალურ სურათებს, და model-ს ვასწავლით “denoising direction”-ს. მერე generation ხდება annealed Langevin dynamics-ით: ვიწყებთ pure noise-ით და ეტაპობრივად σ-ს ვამცირებთ, network-ის score-guidance-ით ვაგენერირებთ რეალისტურ სურათებს.
+
+NCSN არის score-based generative model. იდეა არის ის, რომ ჩვენ არ ვსწავლობთ პირდაპირ p(x)-ს ან likelihood-ს, არამედ ვსწავლობთ score function-ს — ეს არის density-ის log-ის gradient:
+
+score = “რომელი მიმართულებით უნდა გადავწიოთ მოცემული sample, რომ უფრო მაღალი probability მქონე რეგიონში მოხვდეს”.
+
+რეალურ მონაცემებზე score ხშირად პრობლემურია, რადგან data ხშირად sits on low-dimensional manifold-ზე, ამიტომ NCSN აკეთებს noise perturbation-ს: ვქმნით noisy distribution-ს სხვადასხვა noise scale-ზე σ.
+
+Training (DSM)
+1.ვიღებთ ნამდვილ სურათს x
+2.ვირჩევთ noise level σ
+3.ვქმნით x_noisy = x + σ·ε
+4.რადან ჩვენ ვიცით ε, შეგვიძლია ვაწარმოოთ ზუსტი target direction noisy space-ში: -ε/σ
+5.network იღებს (x_noisy, σ) და აბრუნებს score estimate-ს (image-sized vector field)
+6.loss (DSM) აიძულებს network-ს ამ score-ს მიუახლოვდეს ყველა σ-ზე.
+
+მნიშვნელოვანია, რომ ეს ერთი network ერთდროულად სწავლობს:
+1.დიდი σ-ზე: global structure / mixing behavior
+2.პატარა σ-ზე: დეტალები / refinement
+
+Generation (Annealed Langevin Dynamics)
+
+Training-ის შემდეგ generation ხდება MCMC sampling-ით:
+1.ვიწყებთ random Gaussian noise images-ით
+2.noise levels σ მივყავართ დიდიდან პატარამდე (annealing)
+3.ყოველ დონეზე ვაკეთებთ რამდენიმე Langevin update-ს:
+    x ← x + α·score(x,σ) + sqrt(2α)·noise
+4.score term გვქაჩავს data density-ისკენ, noise term ინარჩუნებს exploration-ს, რომ model modes შორის გადაადგილება შეძლოს.ბოლოს, σ პატარაა და sample ხდება რეალისტური.
+
+
 # Paper 1: Generative Modeling by Estimating Gradients of the Data Distribution
 
 Paper ამბობს: არ ვასწავლით model-ს პირდაპირ p(x)-ს ან likelihood-ს. ამის ნაცვლად ვასწავლით score function-ს:
@@ -174,13 +204,12 @@ view(-1,1) ნიშნავს - გადაალაგე ტენსო�
 -1 ნიშნავს რომ პაითორჩი მისით დათვლის batch sizes.
 რატომ ვშვებით ამას, იმიტომ რომ nn.Linear  ელოდება [batch,features] ფორმას.
 h = F.relu(self.fc1(t)) - თავიდან ქმნის [batch,dim] ვექტორებს. რელუ არაწრფივს ხდის(უარყოფითი -> 0). ემბედინგს ვაქცევთ არაწრფივს რათა სიგმას ეფექტი არ იყოს მხოლოდ ხაზოვანი.
-return F.relu(self.fc2(h)) - fc2 ისევ გარდაქმნის ემბედინგს და ისევ რელუს მოსდებს. შედეგი: [batch,dim]  embeding  ვექტორი, რომელიც გამოიყენება ქონდიშენად.
+return F.relu(self.fc2(h)) - fc2 ისევ გარდაქმნის ემბედინგს და ისევ რელუს მოსდებს. შედეგი: [batch,dim]  embeding  ვექტორი, რომელიც გამოიყენება ქონდიშენად.   
 
 -------
 
 ResBlock - Residual Block conditioning
-ResBlock  არის ბლოკი, რომელიც აკეთებს Conv->Norm->ReLU, ამატებს სიგმა ემბედინგს, ისევ Conv->Norm  დბოლოს აუთფუთი აქვს F(x) + x.
-
+ResBlock  არის ბლოკი, რომელიც აკეთებს Conv->Norm->ReLU, ამატებს სიგმა ემბედინგს, ისევ Conv->Norm  დბოლოს აუთფუთი აქვს F(x) + x.  
 ResBlock(nn.Module): - გადაეცემა input feature maps channels, რამდენ channel-ს გამოვიტანთ ამ block-იდან, embedding vector-ის ზომა (TimeEmbedding-ის output dim).
 
 Conv2d(in_channels, out_channels, kernel_size, padding) - output: [batch, out_ch, H, W]
@@ -398,6 +427,6 @@ Langevin dynamics-ში ჩვეულებრივ noise-ის მას�
 
 | Schedule  | FID        |
 | --------- | ---------- |
-| Geometric | **231.21** |
+| Geometric | **131.21** |
 | Linear    | **477.47** |
-| SNR-based | **230.75** |
+| SNR-based | **130.75** |
